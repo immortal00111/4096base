@@ -1,10 +1,9 @@
 {
   "accountAssociation": {
-    "header": "eyJmaWQiOjI3NjYwMTEsInR5cGUiOiJhdXRoIiwia2V5IjoiMHhkZjI3RkE0YTZjNzNjNjJjNUQ2YzkzMTIzRTczNjNhMzFkOTcwMzFFIn0",
-    "payload": "eyJkb21haW4iOiI0MDk2YmFzZS52ZXJjZWwuYXBwIn0",
-    "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEF5-EQCSU1qaN16xuAemBQltinxLUzHXYezEqdKlwn3NS9F0T9UHcB8tqotbi3u1hR6LWUWWDirn2NQyEvwUZoYHAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-  }
-}
+    "header": "PASTE_HEADER",
+    "payload": "PASTE_PAYLOAD",
+    "signature": "PASTE_SIGNATURE"
+  },
   "miniapp": {
     "version": "1",
     "name": "4096",
@@ -19,8 +18,7 @@
     "heroImageUrl": "https://4096base.vercel.app/assets/hero.png",
     "tagline": "hit 4096",
     "ogTitle": "4096 mini app",
-    "ogDescription": "merge tiles, flex score.",
-    "ogImageUrl": "https://4096base.vercel.app/assets/hero.png",
-    "noindex": true
+    "ogDescription": "merge tiles, flex score",
+    "ogImageUrl": "https://4096base.vercel.app/assets/hero.png"
   }
 }
