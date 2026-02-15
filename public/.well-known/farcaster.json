@@ -1,0 +1,21 @@
+{
+  "accountAssociation": { "header": "", "payload": "", "signature": "" },
+  "miniapp": {
+    "version": "1",
+    "name": "4096",
+    "homeUrl": "http://localhost:5173",
+    "iconUrl": "http://localhost:5173/assets/icon-1024.png",
+    "splashImageUrl": "http://localhost:5173/assets/splash-200.png",
+    "splashBackgroundColor": "#0b1220",
+    "subtitle": "merge to win",
+    "description": "merge tiles, stack score, hit 4096.",
+    "primaryCategory": "games",
+    "tags": ["game", "puzzle", "4096"],
+    "heroImageUrl": "http://localhost:5173/assets/hero.png",
+    "tagline": "hit 4096",
+    "ogTitle": "4096 mini app",
+    "ogDescription": "merge tiles, flex score.",
+    "ogImageUrl": "http://localhost:5173/assets/hero.png",
+    "noindex": true
+  }
+}
