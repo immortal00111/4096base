@@ -1,351 +1,646 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { sdk } from "@farcaster/miniapp-sdk";
+import {
+  addRandomTile,
+  computeMove,
+  createInitialTiles,
+  GRID_SIZE,
+  hasMovesLeft,
+  highestTile,
+  WINNING_EXPONENT,
+  WINNING_TILE,
+  type Direction,
+  type Tile,
+} from "./game";
+import {
+  addLeaderboardEntry,
+  getBestScore,
+  getLeaderboard,
+  getRank,
+  getTrophy,
+  MAX_NAME_LENGTH,
+  normalizeName,
+  qualifiesForLeaderboard,
+  setBestScore as persistBest,
+  setTrophy as persistTrophy,
+  type ScoreEntry,
+} from "./storage";
+import { Celebration, type CelebrationHandle } from "./Celebration";
+import { Leaderboard } from "./Leaderboard";
+import { usePlayFlow } from "./web3/usePlayFlow";
+import { WalletBar } from "./web3/WalletBar";
+import { FundPanel } from "./web3/FundPanel";
+import { contractsConfigured } from "./web3/config";
+import "./App.css";
 
-type Dir = "left" | "right" | "up" | "down";
-type Board = number[][];
+const SLIDE_MS = 110; // keep in sync with the tile transition in App.css
 
-const SIZE = 4;
-const TARGET = 4096;
+type Tab = "game" | "fund";
 
-function emptyBoard(): Board {
-  return Array.from({ length: SIZE }, () => Array(SIZE).fill(0));
-}
-function cloneBoard(b: Board): Board {
-  return b.map((r) => r.slice());
-}
-function randInt(n: number) {
-  return Math.floor(Math.random() * n);
-}
-function getEmptyCells(b: Board) {
-  const cells: { r: number; c: number }[] = [];
-  for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) if (b[r][c] === 0) cells.push({ r, c });
-  return cells;
-}
-function addRandomTile(b: Board): Board {
-  const cells = getEmptyCells(b);
-  if (cells.length === 0) return b;
-  const { r, c } = cells[randInt(cells.length)];
-  const v = Math.random() < 0.9 ? 2 : 4;
-  const nb = cloneBoard(b);
-  nb[r][c] = v;
-  return nb;
-}
-function boardsEqual(a: Board, b: Board) {
-  for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) if (a[r][c] !== b[r][c]) return false;
-  return true;
-}
-function slideAndMergeLine(line: number[]): { out: number[]; gained: number } {
-  const filtered = line.filter((x) => x !== 0);
-  const out: number[] = [];
-  let gained = 0;
+type GameStatus = "playing" | "won" | "over";
 
-  for (let i = 0; i < filtered.length; i++) {
-    const cur = filtered[i];
-    const nxt = filtered[i + 1];
-    if (nxt !== undefined && cur === nxt) {
-      const merged = cur * 2;
-      out.push(merged);
-      gained += merged;
-      i++;
-    } else {
-      out.push(cur);
-    }
-  }
-  while (out.length < SIZE) out.push(0);
-  return { out, gained };
-}
-function rotateRight(b: Board): Board {
-  const nb = emptyBoard();
-  for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) nb[c][SIZE - 1 - r] = b[r][c];
-  return nb;
-}
-function rotateLeft(b: Board): Board {
-  const nb = emptyBoard();
-  for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) nb[SIZE - 1 - c][r] = b[r][c];
-  return nb;
-}
-function moveBoard(b: Board, dir: Dir): { board: Board; gained: number; moved: boolean } {
-  let work = cloneBoard(b);
+const MILESTONES: Record<number, string> = {
+  128: "Warming up! 🔥",
+  256: "Halfway there!",
+  512: "Getting close!",
+  1024: "Almost there!",
+  2048: "One step from the jackpot!",
+};
 
-  if (dir === "up") work = rotateLeft(work);
-  if (dir === "down") work = rotateRight(work);
-  if (dir === "right") work = work.map((row) => row.slice().reverse());
-
-  let gained = 0;
-  const next = work.map((row) => {
-    const res = slideAndMergeLine(row);
-    gained += res.gained;
-    return res.out;
-  });
-
-  let restored = next;
-  if (dir === "up") restored = rotateRight(restored);
-  if (dir === "down") restored = rotateLeft(restored);
-  if (dir === "right") restored = restored.map((row) => row.slice().reverse());
-
-  const moved = !boardsEqual(b, restored);
-  return { board: restored, gained, moved };
-}
-function canMove(b: Board) {
-  if (getEmptyCells(b).length > 0) return true;
-  for (let r = 0; r < SIZE; r++) {
-    for (let c = 0; c < SIZE; c++) {
-      const v = b[r][c];
-      if (r + 1 < SIZE && b[r + 1][c] === v) return true;
-      if (c + 1 < SIZE && b[r][c + 1] === v) return true;
-    }
-  }
-  return false;
-}
-function maxTile(b: Board) {
-  let m = 0;
-  for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) m = Math.max(m, b[r][c]);
-  return m;
-}
-function getBestFromStorage() {
-  const raw = localStorage.getItem("base4096_best");
-  const n = raw ? Number(raw) : 0;
-  return Number.isFinite(n) ? n : 0;
-}
-function setBestToStorage(n: number) {
-  localStorage.setItem("base4096_best", String(n));
-}
-function tileBg(v: number) {
-  if (v === 0) return "rgba(255,255,255,0.06)";
-  if (v <= 8) return "rgba(255,255,255,0.15)";
-  if (v <= 32) return "rgba(255,255,255,0.22)";
-  if (v <= 128) return "rgba(120,180,255,0.35)";
-  if (v <= 512) return "rgba(120,255,180,0.35)";
-  if (v <= 2048) return "rgba(255,220,120,0.45)";
-  return "rgba(255,120,160,0.55)";
-}
-
-export default function App() {
-  const [board, setBoard] = useState<Board>(() => addRandomTile(addRandomTile(emptyBoard())));
+const App = () => {
+  const [tiles, setTiles] = useState<Tile[]>(() => createInitialTiles());
   const [score, setScore] = useState(0);
-  const [best, setBest] = useState(() => getBestFromStorage());
-  const [won, setWon] = useState(false);
-  const [over, setOver] = useState(false);
+  const [best, setBest] = useState(() => getBestScore());
+  const [status, setStatus] = useState<GameStatus>("playing");
+  const [wonDismissed, setWonDismissed] = useState(false);
+  const [trophy, setTrophy] = useState(() => getTrophy());
+  const [showBig, setShowBig] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const [shake, setShake] = useState(false);
 
-  // base miniapp: tell the container we are ready (safe on localhost)
-  useEffect(() => {
-    try {
-      sdk.actions.ready();
-    } catch {
-      // ignore when not running inside base/farcaster container
-    }
+  const [leaderboard, setLeaderboard] = useState<ScoreEntry[]>(() => getLeaderboard());
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [nameInput, setNameInput] = useState("");
+  const [savedEntryDate, setSavedEntryDate] = useState<number | undefined>();
+  const [scoreSaved, setScoreSaved] = useState(false);
+  // True once this run has beaten the previous all-time best (personal best).
+  const [newBest, setNewBest] = useState(false);
+
+  // Pay-to-play. When contracts aren't configured (no deployed addresses yet),
+  // the game falls back to free play so all existing behavior is preserved.
+  // When configured, a confirmed on-chain payment is required to start a game.
+  const flow = usePlayFlow();
+  const [armed, setArmed] = useState(!contractsConfigured);
+  const armedRef = useRef(armed);
+
+  // Game / Fund tabs. The game stays mounted (just hidden) when on the Fund
+  // tab so its in-progress state and listeners are preserved. tabRef keeps the
+  // global key handler from moving the board while the Fund tab is open.
+  const [tab, setTab] = useState<Tab>("game");
+  const tabRef = useRef<Tab>("game");
+  const switchTab = useCallback((t: Tab) => {
+    tabRef.current = t;
+    setTab(t);
   }, []);
 
-  const touchStart = useRef<{ x: number; y: number } | null>(null);
-
-  const statusText = useMemo(() => {
-    if (over) return "game over";
-    if (won) return "you hit 4096";
-    return "reach 4096";
-  }, [over, won]);
-
-  function reset() {
-    setBoard(addRandomTile(addRandomTile(emptyBoard())));
-    setScore(0);
-    setWon(false);
-    setOver(false);
-  }
-
-  function tryMove(dir: Dir) {
-    if (over) return;
-
-    const res = moveBoard(board, dir);
-    if (!res.moved) return;
-
-    const nb = addRandomTile(res.board);
-    const newScore = score + res.gained;
-
-    setBoard(nb);
-    setScore(newScore);
-
-    if (newScore > best) {
-      setBest(newScore);
-      setBestToStorage(newScore);
-    }
-
-    if (!won && maxTile(nb) >= TARGET) setWon(true);
-    if (!canMove(nb)) setOver(true);
-  }
+  // Refs are the source of truth for fast-path move handling so the global
+  // key listener never reads stale closure state.
+  const tilesRef = useRef(tiles);
+  const scoreRef = useRef(0);
+  const bestRef = useRef(best);
+  const statusRef = useRef<GameStatus>("playing");
+  const highestSeenRef = useRef(highestTile(tiles));
+  const lockRef = useRef(false);
+  const toastTimer = useRef<number>(0);
+  const shakeTimer = useRef<number>(0);
+  const confettiRef = useRef<CelebrationHandle>(null);
 
   useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "ArrowLeft") tryMove("left");
-      if (e.key === "ArrowRight") tryMove("right");
-      if (e.key === "ArrowUp") tryMove("up");
-      if (e.key === "ArrowDown") tryMove("down");
-      if (e.key === "r" || e.key === "R") reset();
-    }
+    sdk.actions.ready();
+  }, []);
+
+  const commitTiles = useCallback((next: Tile[]) => {
+    tilesRef.current = next;
+    setTiles(next);
+  }, []);
+
+  const flashToast = useCallback((msg: string) => {
+    setToast(msg);
+    window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToast(null), 1900);
+  }, []);
+
+  const triggerShake = useCallback(() => {
+    setShake(true);
+    window.clearTimeout(shakeTimer.current);
+    shakeTimer.current = window.setTimeout(() => setShake(false), 360);
+  }, []);
+
+  const celebrate = useCallback(
+    (highest: number) => {
+      if (highest <= highestSeenRef.current) return;
+      const prev = highestSeenRef.current;
+      highestSeenRef.current = highest;
+
+      if (highest >= WINNING_TILE && prev < WINNING_TILE) {
+        setShowBig(true);
+        if (statusRef.current === "playing") {
+          statusRef.current = "won";
+          setStatus("won");
+        }
+        if (!getTrophy()) {
+          persistTrophy(true);
+          setTrophy(true);
+        }
+        // Big finale: a few staggered bursts across the screen.
+        confettiRef.current?.fire(2.4, 0.4);
+        window.setTimeout(() => confettiRef.current?.fire(1.8, 0.28), 180);
+        window.setTimeout(() => confettiRef.current?.fire(1.8, 0.55), 360);
+        return;
+      }
+
+      const message = MILESTONES[highest];
+      if (message) {
+        const intensity = 0.5 + Math.log2(highest) / 12;
+        confettiRef.current?.fire(intensity, 0.38);
+        flashToast(message);
+      }
+    },
+    [flashToast]
+  );
+
+  const handleMove = useCallback(
+    (dir: Direction) => {
+      if (lockRef.current) return;
+      if (tabRef.current !== "game") return; // ignore moves while on Fund tab
+      if (statusRef.current === "over") return;
+      if (!armedRef.current) return; // must pay to play (when configured)
+
+      const { moved, gained, slideTiles, resultTiles, maxMerged } = computeMove(
+        tilesRef.current,
+        dir
+      );
+      if (!moved) return;
+
+      lockRef.current = true;
+      commitTiles(slideTiles);
+      if (maxMerged >= 512) triggerShake();
+
+      window.setTimeout(() => {
+        const withNew = addRandomTile(resultTiles);
+        commitTiles(withNew);
+
+        if (gained > 0) {
+          const newScore = scoreRef.current + gained;
+          scoreRef.current = newScore;
+          setScore(newScore);
+          if (newScore > bestRef.current) {
+            // Only counts as a personal best if there was a prior best to beat,
+            // so a brand-new player's first game isn't flagged as a "record".
+            if (bestRef.current > 0) setNewBest(true);
+            bestRef.current = newScore;
+            setBest(newScore);
+            persistBest(newScore);
+          }
+        }
+
+        celebrate(highestTile(withNew));
+
+        if (!hasMovesLeft(withNew)) {
+          statusRef.current = "over";
+          setStatus("over");
+        }
+
+        lockRef.current = false;
+      }, SLIDE_MS);
+    },
+    [celebrate, commitTiles, triggerShake]
+  );
+
+  // Keyboard controls.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const map: Record<string, Direction> = {
+        ArrowUp: "up",
+        ArrowDown: "down",
+        ArrowLeft: "left",
+        ArrowRight: "right",
+        w: "up",
+        s: "down",
+        a: "left",
+        d: "right",
+        W: "up",
+        S: "down",
+        A: "left",
+        D: "right",
+      };
+      const dir = map[e.key];
+      if (!dir) return;
+      e.preventDefault();
+      handleMove(dir);
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [board, score, best, over, won]);
+  }, [handleMove]);
 
-  function onTouchStart(e: React.TouchEvent) {
+  // Touch / swipe controls.
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
+  const onTouchStart = (e: React.TouchEvent) => {
     const t = e.touches[0];
     touchStart.current = { x: t.clientX, y: t.clientY };
-  }
-  function onTouchEnd(e: React.TouchEvent) {
+  };
+  const onTouchEnd = (e: React.TouchEvent) => {
     const start = touchStart.current;
-    touchStart.current = null;
     if (!start) return;
-
+    touchStart.current = null;
     const t = e.changedTouches[0];
     const dx = t.clientX - start.x;
     const dy = t.clientY - start.y;
+    const absX = Math.abs(dx);
+    const absY = Math.abs(dy);
+    if (Math.max(absX, absY) < 24) return;
+    if (absX > absY) handleMove(dx > 0 ? "right" : "left");
+    else handleMove(dy > 0 ? "down" : "up");
+  };
 
-    const ax = Math.abs(dx);
-    const ay = Math.abs(dy);
-    if (Math.max(ax, ay) < 30) return;
+  const newGame = useCallback(() => {
+    const fresh = createInitialTiles();
+    commitTiles(fresh);
+    scoreRef.current = 0;
+    setScore(0);
+    statusRef.current = "playing";
+    setStatus("playing");
+    highestSeenRef.current = highestTile(fresh);
+    lockRef.current = false;
+    setWonDismissed(false);
+    setShowBig(false);
+    setToast(null);
+    setScoreSaved(false);
+    setNameInput("");
+    setSavedEntryDate(undefined);
+    setNewBest(false);
+  }, [commitTiles]);
 
-    if (ax > ay) tryMove(dx > 0 ? "right" : "left");
-    else tryMove(dy > 0 ? "down" : "up");
-  }
+  // Start a fresh, playable game (arms the board).
+  const startGame = useCallback(() => {
+    newGame();
+    armedRef.current = true;
+    setArmed(true);
+  }, [newGame]);
+
+  // Request a new game: free play starts immediately; paid mode awaits an
+  // on-chain payment confirmation and only then starts the game.
+  const { pay, payPhase } = flow;
+  const requestNewGame = useCallback(async () => {
+    if (!contractsConfigured) {
+      startGame();
+      return;
+    }
+    if (await pay()) startGame();
+  }, [startGame, pay]);
+
+  const saveScore = useCallback(() => {
+    const date = Date.now();
+    const next = addLeaderboardEntry(nameInput, scoreRef.current, date);
+    setLeaderboard(next);
+    setSavedEntryDate(date);
+    setScoreSaved(true);
+    setShowLeaderboard(true);
+  }, [nameInput]);
+
+  // Derived jackpot indicator.
+  const highest = useMemo(() => highestTile(tiles), [tiles]);
+  const exponent = highest > 0 ? Math.log2(highest) : 0;
+  const stepsRemaining = Math.max(0, WINNING_EXPONENT - exponent);
+  const progress = Math.min(1, exponent / WINNING_EXPONENT);
+
+  const canSaveScore =
+    status === "over" && !scoreSaved && qualifiesForLeaderboard(score);
+
+  // Rank readout on game over: projected before saving, actual after.
+  const { rank, total } = useMemo(
+    () => getRank(score, leaderboard),
+    [score, leaderboard]
+  );
+  const onLeaderboard = scoreSaved && savedEntryDate !== undefined;
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background: "#0b1220",
-        color: "white",
-        fontFamily: "Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
-        display: "flex",
-        justifyContent: "center",
-        padding: 20,
-      }}
-    >
-      <div style={{ width: 420, maxWidth: "92vw" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-          <div>
-            <div style={{ fontSize: 28, fontWeight: 900 }}>4096</div>
-            <div style={{ opacity: 0.75, fontSize: 13 }}>{statusText}</div>
+    <div className="app">
+      <Celebration ref={confettiRef} />
+
+      <header className="topbar">
+        <div className="brand">
+          <h1>
+            4096 <span className="on-base">on Base</span>
+          </h1>
+          {trophy && (
+            <span className="trophy-badge" title="You reached 4096!">
+              🏆 Reached 4096
+            </span>
+          )}
+        </div>
+        <div className="scores">
+          <div className="score-box">
+            <span className="score-label">Score</span>
+            <span className="score-value">{score.toLocaleString()}</span>
+          </div>
+          <div className="score-box">
+            <span className="score-label">Best</span>
+            <span className="score-value">{best.toLocaleString()}</span>
+          </div>
+        </div>
+      </header>
+
+      <div className="tabs">
+        <button
+          className={"tab" + (tab === "game" ? " tab-active" : "")}
+          onClick={() => switchTab("game")}
+        >
+          🎮 Game
+        </button>
+        <button
+          className={"tab" + (tab === "fund" ? " tab-active" : "")}
+          onClick={() => switchTab("fund")}
+        >
+          💰 4096 Fund
+        </button>
+      </div>
+
+      <div
+        className="game-view"
+        style={{ display: tab === "game" ? undefined : "none" }}
+      >
+      <WalletBar flow={flow} />
+
+      <section className="jackpot">
+        <div className="jackpot-line">
+          {stepsRemaining <= 0 ? (
+            <span className="jackpot-text won">Jackpot reached! 🎆</span>
+          ) : (
+            <span className="jackpot-text">
+              <strong>{stepsRemaining}</strong>{" "}
+              {stepsRemaining === 1 ? "step" : "steps"} from the jackpot 🎆
+            </span>
+          )}
+          <span className="jackpot-target">{highest} / {WINNING_TILE}</span>
+        </div>
+        <div className="progress-track">
+          <div
+            className="progress-fill"
+            style={{ width: `${progress * 100}%` }}
+          />
+        </div>
+      </section>
+
+      <div className="controls-row">
+        <button
+          className="btn"
+          onClick={requestNewGame}
+          disabled={
+            contractsConfigured &&
+            (payPhase === "pending" || payPhase === "confirming")
+          }
+        >
+          {!contractsConfigured
+            ? "New Game"
+            : payPhase === "pending"
+              ? "Confirm in wallet…"
+              : payPhase === "confirming"
+                ? "Confirming…"
+                : `New Game (${flow.feeLabel})`}
+        </button>
+        <button className="btn" onClick={() => setShowLeaderboard(true)}>
+          🏆 Leaderboard
+        </button>
+      </div>
+
+      <div className="board-wrap">
+        <div
+          className={"board" + (shake ? " shake" : "")}
+          onTouchStart={onTouchStart}
+          onTouchEnd={onTouchEnd}
+        >
+          <div className="grid-bg">
+            {Array.from({ length: GRID_SIZE * GRID_SIZE }).map((_, i) => (
+              <div key={i} className="grid-cell" />
+            ))}
           </div>
 
-          <div style={{ display: "flex", gap: 10 }}>
-            {[
-              ["score", score],
-              ["best", best],
-            ].map(([label, val]) => (
+          <div className="tiles">
+            {tiles.map((t) => (
               <div
-                key={label as string}
+                key={t.id}
+                className={
+                  "tile tile-" +
+                  t.value +
+                  (t.isNew ? " tile-new" : "") +
+                  (t.merged ? " tile-merged" : "")
+                }
                 style={{
-                  background: "rgba(255,255,255,0.08)",
-                  border: "1px solid rgba(255,255,255,0.12)",
-                  borderRadius: 12,
-                  padding: "10px 12px",
-                  minWidth: 92,
-                  textAlign: "center",
+                  transform: `translate(calc(var(--gap) + ${t.col} * var(--stride)), calc(var(--gap) + ${t.row} * var(--stride)))`,
                 }}
               >
-                <div style={{ opacity: 0.75, fontSize: 11 }}>{label as string}</div>
-                <div style={{ fontWeight: 900, fontSize: 18 }}>{val as number}</div>
+                <span className="tile-inner">{t.value}</span>
               </div>
             ))}
           </div>
-        </div>
 
-        <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
-          <button
-            onClick={reset}
-            style={{
-              cursor: "pointer",
-              borderRadius: 12,
-              border: "1px solid rgba(255,255,255,0.16)",
-              background: "rgba(255,255,255,0.08)",
-              color: "white",
-              padding: "10px 12px",
-              fontWeight: 800,
-            }}
-          >
-            new game
-          </button>
-
-          <div style={{ opacity: 0.7, fontSize: 12, alignSelf: "center" }}>
-            arrows to move, r to reset, swipe on mobile
-          </div>
-        </div>
-
-        <div
-          onTouchStart={onTouchStart}
-          onTouchEnd={onTouchEnd}
-          style={{
-            marginTop: 16,
-            background: "rgba(255,255,255,0.06)",
-            border: "1px solid rgba(255,255,255,0.10)",
-            borderRadius: 18,
-            padding: 12,
-            position: "relative",
-            userSelect: "none",
-            touchAction: "none",
-          }}
-        >
-          {(won || over) && (
-            <div
-              style={{
-                position: "absolute",
-                inset: 12,
-                borderRadius: 14,
-                background: "rgba(0,0,0,0.55)",
-                border: "1px solid rgba(255,255,255,0.14)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                flexDirection: "column",
-                gap: 10,
-                zIndex: 5,
-              }}
-            >
-              <div style={{ fontWeight: 900, fontSize: 22 }}>{over ? "game over" : "you won"}</div>
-              <div style={{ opacity: 0.8, fontSize: 13 }}>{over ? "no moves left" : "keep going if you want"}</div>
-              <button
-                onClick={reset}
-                style={{
-                  cursor: "pointer",
-                  borderRadius: 12,
-                  border: "1px solid rgba(255,255,255,0.18)",
-                  background: "rgba(255,255,255,0.10)",
-                  color: "white",
-                  padding: "10px 14px",
-                  fontWeight: 900,
-                }}
-              >
-                play again
-              </button>
+          {toast && (
+            <div className="toast" key={toast}>
+              {toast}
             </div>
           )}
 
-          <div style={{ display: "grid", gridTemplateColumns: `repeat(${SIZE}, 1fr)`, gap: 10 }}>
-            {board.flatMap((row, r) =>
-              row.map((v, c) => (
-                <div
-                  key={`${r}-${c}`}
-                  style={{
-                    height: 86,
-                    borderRadius: 14,
-                    background: tileBg(v),
-                    border: "1px solid rgba(255,255,255,0.10)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontWeight: 900,
-                    fontSize: v >= 1024 ? 24 : v >= 128 ? 28 : 32,
-                  }}
-                >
-                  {v === 0 ? "" : v}
-                </div>
-              ))
-            )}
-          </div>
-        </div>
+          {status !== "over" && !armed && (
+            <div className="overlay">
+              <div className="overlay-card">
+                <h2 className="overlay-title">Pay to play</h2>
+                {!flow.isConnected ? (
+                  <p>Connect your wallet above to start a game.</p>
+                ) : !flow.onCorrectNetwork ? (
+                  <p>Switch to Base Sepolia (above) to start a game.</p>
+                ) : (
+                  <>
+                    <p>
+                      One game costs <strong>{flow.feeLabel}</strong>
+                      {flow.hasNFT ? " — NFT discount applied 🎟️" : ""}.
+                    </p>
+                    <button
+                      className="btn btn-primary full"
+                      onClick={requestNewGame}
+                      disabled={
+                        !flow.fee ||
+                        payPhase === "pending" ||
+                        payPhase === "confirming"
+                      }
+                    >
+                      {payPhase === "pending"
+                        ? "Confirm in wallet…"
+                        : payPhase === "confirming"
+                          ? "Confirming payment…"
+                          : `Pay ${flow.feeLabel} & play`}
+                    </button>
+                    {flow.payError && (
+                      <p className="wallet-note err">{flow.payError}</p>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          )}
 
-        <div style={{ marginTop: 14, opacity: 0.7, fontSize: 12, lineHeight: 1.5 }}>
-          merge equal tiles. each merge adds to your score. hit 4096 to win.
+          {status === "won" && !wonDismissed && !showBig && (
+            <div className="overlay">
+              <div className="overlay-card">
+                <h2 className="overlay-title win">🎆 4096!</h2>
+                <p>You hit the jackpot on Base.</p>
+
+                {flow.badgeConfigured && (
+                  <div className="badge-mint">
+                    {flow.hasBadge ? (
+                      <p className="badge-owned">🏆 Badge owned ✓</p>
+                    ) : !flow.isConnected ? (
+                      <p className="wallet-note">
+                        Connect your wallet to mint your badge.
+                      </p>
+                    ) : !flow.onCorrectNetwork ? (
+                      <p className="wallet-note warn">
+                        Switch to Base Sepolia to mint your badge.
+                      </p>
+                    ) : (
+                      <>
+                        <button
+                          className="btn btn-primary full"
+                          onClick={flow.mintBadge}
+                          disabled={
+                            flow.badgePhase === "pending" ||
+                            flow.badgePhase === "confirming"
+                          }
+                        >
+                          {flow.badgePhase === "pending"
+                            ? "Confirm in wallet…"
+                            : flow.badgePhase === "confirming"
+                              ? "Minting badge…"
+                              : flow.badgePhase === "success"
+                                ? "Badge minted ✓"
+                                : "Mint your Reached 4096 badge 🏆"}
+                        </button>
+                        {flow.badgeError && (
+                          <p className="wallet-note err">{flow.badgeError}</p>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+
+                <div className="overlay-actions">
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => setWonDismissed(true)}
+                  >
+                    Keep going
+                  </button>
+                  <button className="btn" onClick={requestNewGame}>
+                    {contractsConfigured ? "Pay & play again" : "New Game"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {status === "over" && (
+            <div className="overlay">
+              <div className="overlay-card">
+                <h2 className="overlay-title over">Game Over</h2>
+                <p>
+                  Score <strong>{score.toLocaleString()}</strong> points
+                </p>
+
+                {newBest && (
+                  <p className="pb-note">🌟 New personal best!</p>
+                )}
+
+                {score > 0 && (
+                  <p className="rank-note">
+                    {onLeaderboard ? "You're" : "You'd rank"}{" "}
+                    <strong>#{rank}</strong> of {total}
+                  </p>
+                )}
+
+                {canSaveScore ? (
+                  <div className="name-entry">
+                    <p className="qualify">🎉 You made the top 10!</p>
+                    <input
+                      className="name-input"
+                      value={nameInput}
+                      onChange={(e) => setNameInput(normalizeName(e.target.value))}
+                      placeholder="Your initials"
+                      maxLength={MAX_NAME_LENGTH}
+                      autoFocus
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") saveScore();
+                      }}
+                    />
+                    <button className="btn btn-primary full" onClick={saveScore}>
+                      Save score
+                    </button>
+                  </div>
+                ) : (
+                  scoreSaved && <p className="saved-note">Saved to leaderboard ✓</p>
+                )}
+
+                {contractsConfigured && payPhase === "error" && flow.payError && (
+                  <p className="wallet-note err">{flow.payError}</p>
+                )}
+                <div className="overlay-actions">
+                  <button
+                    className="btn btn-primary"
+                    onClick={requestNewGame}
+                    disabled={
+                      contractsConfigured &&
+                      (payPhase === "pending" || payPhase === "confirming")
+                    }
+                  >
+                    {!contractsConfigured
+                      ? "New Game"
+                      : payPhase === "pending"
+                        ? "Confirm in wallet…"
+                        : payPhase === "confirming"
+                          ? "Confirming…"
+                          : "Pay & play again"}
+                  </button>
+                  <button
+                    className="btn"
+                    onClick={() => setShowLeaderboard(true)}
+                  >
+                    Leaderboard
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
+
+      <p className="hint">Swipe or use arrow keys / WASD. Merge to 4096 to win.</p>
+      </div>
+
+      {tab === "fund" && <FundPanel />}
+
+      {showBig && (
+        <div
+          className="big-celebration"
+          onClick={() => {
+            setShowBig(false);
+            setWonDismissed(true);
+          }}
+        >
+          <div className="big-inner">
+            <div className="big-trophy">🏆</div>
+            <h2>Reached 4096!</h2>
+            <p>Jackpot on Base 🎆</p>
+            <button
+              className="btn btn-primary"
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowBig(false);
+                setWonDismissed(true);
+              }}
+            >
+              Continue
+            </button>
+          </div>
+        </div>
+      )}
+
+      <Leaderboard
+        open={showLeaderboard}
+        entries={leaderboard}
+        highlightDate={savedEntryDate}
+        onClose={() => setShowLeaderboard(false)}
+      />
     </div>
   );
-}
+};
+
+export default App;

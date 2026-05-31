@@ -1,0 +1,21 @@
+{
+  "name": "base-4096-contracts",
+  "version": "0.0.0",
+  "description": "Pay-to-play and discount NFT contracts for 4096base (Base Sepolia testnet).",
+  "private": true,
+  "scripts": {
+    "build": "hardhat compile",
+    "test": "hardhat test",
+    "test:fork": "FORK_BASE=1 hardhat test test/MorphoVault.fork.test.js",
+    "test:vault": "node test/morpho-live-sim.mjs",
+    "deploy:baseSepolia": "hardhat run scripts/deploy.js --network baseSepolia"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "hardhat": "^2.22.17"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.1.0",
+    "dotenv": "^16.4.7"
+  }
+}

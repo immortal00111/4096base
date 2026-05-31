@@ -1,0 +1,11 @@
+node_modules
+artifacts
+cache
+typechain-types
+coverage
+coverage.json
+
+# Never commit secrets / private keys
+.env
+.env.*
+!.env.example
