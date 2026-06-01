@@ -8,11 +8,13 @@ type Props = {
   onClose: () => void;
   /** Highlight the most recently added entry (by index) if present. */
   highlightDate?: number;
+  /** Optional source label shown under the title (e.g. on-chain vs local). */
+  note?: string;
 };
 
 const MEDALS = ["🥇", "🥈", "🥉"];
 
-export const Leaderboard = ({ open, entries, onClose, highlightDate }: Props) => {
+export const Leaderboard = ({ open, entries, onClose, highlightDate, note }: Props) => {
   if (!open) return null;
 
   return (
@@ -29,6 +31,8 @@ export const Leaderboard = ({ open, entries, onClose, highlightDate }: Props) =>
             ✕
           </button>
         </div>
+
+        {note && <p className="lb-note">{note}</p>}
 
         {entries.length === 0 ? (
           <p className="empty">No scores yet — be the first to make the board!</p>

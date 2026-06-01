@@ -1,13 +1,15 @@
 // wagmi + RainbowKit configuration for Base Sepolia (testnet only).
 //
-// 4096base is a FREE game. The only on-chain things are two free, one-per-wallet
-// collectible NFTs (Premium / early-supporter, and the "Reached 4096" winner
-// badge). There is no payment, fee, fund, or custody contract — the app never
-// holds, moves, or custodies any funds.
+// 4096base is a FREE game. The on-chain pieces are: a PlayerRegistry (accounts +
+// self-reported high scores) and two free, one-per-wallet collectible NFTs
+// (Premium / early-supporter, and the "Reached 4096" winner badge). There is no
+// payment, fee, fund, or custody contract — the app never holds, moves, or
+// custodies any funds.
 //
 // Contract addresses come from Vite env (set them after deploying — the deploy
-// script prints the exact lines). Until then they default to the zero address,
-// and the UI simply hides the mint actions.
+// script prints the exact lines). Until then they default to the zero address:
+// the registry gate falls back to free play + the local leaderboard, and the
+// NFT mint actions are simply hidden.
 
 import { getDefaultConfig } from "@rainbow-me/rainbowkit";
 import { baseSepolia } from "wagmi/chains";
@@ -18,6 +20,9 @@ const ZERO = "0x0000000000000000000000000000000000000000" as const;
 const asAddress = (value: string | undefined): Address =>
   value && /^0x[0-9a-fA-F]{40}$/.test(value) ? (value as Address) : ZERO;
 
+export const PLAYER_REGISTRY_ADDRESS = asAddress(
+  import.meta.env.VITE_PLAYER_REGISTRY_ADDRESS
+);
 export const PREMIUM_NFT_ADDRESS = asAddress(
   import.meta.env.VITE_PREMIUM_NFT_ADDRESS
 );
@@ -26,6 +31,11 @@ export const ACHIEVEMENT_BADGE_ADDRESS = asAddress(
 );
 
 export const TARGET_CHAIN_ID = baseSepolia.id; // 84532
+
+// When the registry is configured, the app gates play behind on-chain account
+// creation and shows the on-chain leaderboard. When unset, it falls back to
+// free play with the local (localStorage) leaderboard.
+export const registryConfigured = PLAYER_REGISTRY_ADDRESS !== ZERO;
 
 // Each NFT is independent; its mint UI is shown only once its address is set.
 export const premiumConfigured = PREMIUM_NFT_ADDRESS !== ZERO;

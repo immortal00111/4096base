@@ -18,6 +18,7 @@ import {
   getLeaderboard,
   getRank,
   getTrophy,
+  LEADERBOARD_SIZE,
   MAX_NAME_LENGTH,
   normalizeName,
   qualifiesForLeaderboard,
@@ -28,12 +29,16 @@ import {
 import { Celebration, type CelebrationHandle } from "./Celebration";
 import { Leaderboard } from "./Leaderboard";
 import { useWallet } from "./web3/useWallet";
+import { useRegistry } from "./web3/useRegistry";
 import { WalletBar } from "./web3/WalletBar";
+import { registryConfigured } from "./web3/config";
 import "./App.css";
 
 const SLIDE_MS = 110; // keep in sync with the tile transition in App.css
 
 type GameStatus = "playing" | "won" | "over";
+
+const busy = (p: string) => p === "pending" || p === "confirming";
 
 const MILESTONES: Record<number, string> = {
   128: "Warming up! 🔥",
@@ -62,9 +67,20 @@ const App = () => {
   // True once this run has beaten the previous all-time best (personal best).
   const [newBest, setNewBest] = useState(false);
 
-  // Wallet/NFT interactions only (free game — no payment flow). The board is
-  // always playable; connecting a wallet is only for the collectible NFTs.
+  // Wallet/NFT interactions (free game — no payment flow).
   const flow = useWallet();
+  // On-chain accounts + high scores (PlayerRegistry). When the registry isn't
+  // configured, the game stays free-to-play with the local leaderboard.
+  const reg = useRegistry();
+  const [accountName, setAccountName] = useState("");
+
+  // Play is gated only when the registry is configured and the wallet has not
+  // created an on-chain account yet. Otherwise the board is immediately playable.
+  const needsAccount = registryConfigured && !reg.isRegistered;
+  const gateRef = useRef(needsAccount);
+  useEffect(() => {
+    gateRef.current = needsAccount;
+  }, [needsAccount]);
 
   // Refs are the source of truth for fast-path move handling so the global
   // key listener never reads stale closure state.
@@ -135,6 +151,7 @@ const App = () => {
   const handleMove = useCallback(
     (dir: Direction) => {
       if (lockRef.current) return;
+      if (gateRef.current) return; // must create an on-chain account first
       if (statusRef.current === "over") return;
 
       const { moved, gained, slideTiles, resultTiles, maxMerged } = computeMove(
@@ -243,6 +260,11 @@ const App = () => {
     setNewBest(false);
   }, [commitTiles]);
 
+  // Create the on-chain account, then start a fresh game once it confirms.
+  const createAccount = async () => {
+    if (await reg.register(accountName)) newGame();
+  };
+
   const saveScore = useCallback(() => {
     const date = Date.now();
     const next = addLeaderboardEntry(nameInput, scoreRef.current, date);
@@ -252,19 +274,39 @@ const App = () => {
     setShowLeaderboard(true);
   }, [nameInput]);
 
+  // Leaderboard source: on-chain players when the registry is configured,
+  // otherwise the local (localStorage) board.
+  const onChainEntries = useMemo<ScoreEntry[]>(
+    () =>
+      reg.players.slice(0, LEADERBOARD_SIZE).map((p) => ({
+        name: p.name || `${p.address.slice(0, 6)}…`,
+        score: p.score,
+        date: 0,
+      })),
+    [reg.players]
+  );
+  const lbEntries = registryConfigured ? onChainEntries : leaderboard;
+  const lbNote = registryConfigured
+    ? "On-chain · Base Sepolia"
+    : "Local scores on this device";
+
   // Derived jackpot indicator.
   const highest = useMemo(() => highestTile(tiles), [tiles]);
   const exponent = highest > 0 ? Math.log2(highest) : 0;
   const stepsRemaining = Math.max(0, WINNING_EXPONENT - exponent);
   const progress = Math.min(1, exponent / WINNING_EXPONENT);
 
+  // Local save flow only applies when there is no on-chain registry.
   const canSaveScore =
-    status === "over" && !scoreSaved && qualifiesForLeaderboard(score);
+    !registryConfigured &&
+    status === "over" &&
+    !scoreSaved &&
+    qualifiesForLeaderboard(score);
 
-  // Rank readout on game over: projected before saving, actual after.
+  // Rank readout on game over: projected against whichever board is active.
   const { rank, total } = useMemo(
-    () => getRank(score, leaderboard),
-    [score, leaderboard]
+    () => getRank(score, lbEntries),
+    [score, lbEntries]
   );
   const onLeaderboard = scoreSaved && savedEntryDate !== undefined;
 
@@ -298,6 +340,15 @@ const App = () => {
       <div className="game-view">
       <WalletBar flow={flow} />
 
+      {registryConfigured && reg.isRegistered && (
+        <p className="wallet-note">
+          Playing as <strong>{reg.myName}</strong>
+          {reg.myHighScore > 0
+            ? ` · on-chain best ${reg.myHighScore.toLocaleString()}`
+            : ""}
+        </p>
+      )}
+
       <section className="jackpot">
         <div className="jackpot-line">
           {stepsRemaining <= 0 ? (
@@ -319,7 +370,7 @@ const App = () => {
       </section>
 
       <div className="controls-row">
-        <button className="btn" onClick={newGame}>
+        <button className="btn" onClick={newGame} disabled={needsAccount}>
           New Game
         </button>
         <button className="btn" onClick={() => setShowLeaderboard(true)}>
@@ -361,6 +412,62 @@ const App = () => {
           {toast && (
             <div className="toast" key={toast}>
               {toast}
+            </div>
+          )}
+
+          {/* On-chain account gate (only when a PlayerRegistry is configured). */}
+          {needsAccount && (
+            <div className="overlay">
+              <div className="overlay-card">
+                <h2 className="overlay-title">Create your player account</h2>
+                {!reg.isConnected ? (
+                  <p>Connect your wallet above to create an account.</p>
+                ) : !reg.onCorrectNetwork ? (
+                  <>
+                    <p>Switch to Base Sepolia to continue.</p>
+                    <button
+                      className="btn btn-primary full"
+                      onClick={reg.switchToTarget}
+                    >
+                      Switch network
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <p>
+                      Pick a name to register on-chain. This is a transaction
+                      (gas on Base Sepolia); only after it confirms can you play.
+                    </p>
+                    <input
+                      className="name-input"
+                      value={accountName}
+                      onChange={(e) => setAccountName(e.target.value)}
+                      placeholder="Your name"
+                      maxLength={MAX_NAME_LENGTH}
+                      autoFocus
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && accountName.trim()) {
+                          createAccount();
+                        }
+                      }}
+                    />
+                    <button
+                      className="btn btn-primary full"
+                      onClick={createAccount}
+                      disabled={!accountName.trim() || busy(reg.registerPhase)}
+                    >
+                      {reg.registerPhase === "pending"
+                        ? "Confirm in wallet…"
+                        : reg.registerPhase === "confirming"
+                          ? "Creating account…"
+                          : "Create account"}
+                    </button>
+                    {reg.registerError && (
+                      <p className="wallet-note err">{reg.registerError}</p>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
           )}
 
@@ -442,6 +549,30 @@ const App = () => {
                   </p>
                 )}
 
+                {/* On-chain score submission (optional; it's a gas transaction). */}
+                {registryConfigured && reg.isRegistered && score > 0 && (
+                  <div className="onchain-submit">
+                    {reg.submitPhase === "success" ? (
+                      <p className="saved-note">Score submitted on-chain ✓</p>
+                    ) : (
+                      <button
+                        className="btn btn-primary full"
+                        onClick={() => reg.submitScore(score)}
+                        disabled={busy(reg.submitPhase)}
+                      >
+                        {reg.submitPhase === "pending"
+                          ? "Confirm in wallet…"
+                          : reg.submitPhase === "confirming"
+                            ? "Submitting…"
+                            : "Submit score on-chain (gas)"}
+                      </button>
+                    )}
+                    {reg.submitError && (
+                      <p className="wallet-note err">{reg.submitError}</p>
+                    )}
+                  </div>
+                )}
+
                 {canSaveScore ? (
                   <div className="name-entry">
                     <p className="qualify">🎉 You made the top 10!</p>
@@ -461,6 +592,7 @@ const App = () => {
                     </button>
                   </div>
                 ) : (
+                  !registryConfigured &&
                   scoreSaved && <p className="saved-note">Saved to leaderboard ✓</p>
                 )}
 
@@ -512,7 +644,8 @@ const App = () => {
 
       <Leaderboard
         open={showLeaderboard}
-        entries={leaderboard}
+        entries={lbEntries}
+        note={lbNote}
         highlightDate={savedEntryDate}
         onClose={() => setShowLeaderboard(false)}
       />
