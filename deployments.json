@@ -1,0 +1,15 @@
+{
+  "_comment": "Deployed 4096base contract addresses by network. These contracts hold no funds (no payment/fee/fund/custody). The frontend reads addresses from VITE_* env vars; this file is the source-of-record. Fill the base/8453 section after a mainnet deploy.",
+  "baseSepolia": {
+    "chainId": 84532,
+    "playerRegistry": "0xcA263bcF53c076838Ef8770078204aEdEe346821",
+    "premiumNft": "0xA106Ad8c6DCA0eDeAF80fDaf042a61eAf7f3eC69",
+    "achievementBadge": "0x8c020Fb8a1B1e0D2C0b6611caD92b824234EeE90"
+  },
+  "base": {
+    "chainId": 8453,
+    "playerRegistry": null,
+    "premiumNft": null,
+    "achievementBadge": null
+  }
+}

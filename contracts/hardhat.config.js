@@ -1,9 +1,14 @@
 require("@nomicfoundation/hardhat-toolbox");
 require("dotenv").config();
 
-// Base Sepolia (testnet) ONLY. No mainnet network is configured on purpose.
+// Base Sepolia (testnet) and Base mainnet are both valid deploy targets. These
+// contracts hold no funds (no payment/fee/fund/custody), so deploying to mainnet
+// is safe; it still costs real ETH for gas, so default to Sepolia and only use
+// `--network base` deliberately.
 const BASE_SEPOLIA_RPC_URL =
   process.env.BASE_SEPOLIA_RPC_URL || "https://sepolia.base.org";
+const BASE_MAINNET_RPC_URL =
+  process.env.BASE_MAINNET_RPC_URL || "https://mainnet.base.org";
 const PRIVATE_KEY = process.env.PRIVATE_KEY;
 
 /** @type import('hardhat/config').HardhatUserConfig */
@@ -28,11 +33,19 @@ module.exports = {
       chainId: 84532,
       accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],
     },
+    // Base MAINNET. Same deployer key from .env; uses real ETH for gas. Deploy
+    // here only on purpose with `--network base`.
+    base: {
+      url: BASE_MAINNET_RPC_URL,
+      chainId: 8453,
+      accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],
+    },
   },
   etherscan: {
     // Optional: set BASESCAN_API_KEY in .env to enable `hardhat verify`.
     apiKey: {
       baseSepolia: process.env.BASESCAN_API_KEY || "",
+      base: process.env.BASESCAN_API_KEY || "",
     },
     customChains: [
       {
@@ -41,6 +54,14 @@ module.exports = {
         urls: {
           apiURL: "https://api-sepolia.basescan.org/api",
           browserURL: "https://sepolia.basescan.org",
+        },
+      },
+      {
+        network: "base",
+        chainId: 8453,
+        urls: {
+          apiURL: "https://api.basescan.org/api",
+          browserURL: "https://basescan.org",
         },
       },
     ],
