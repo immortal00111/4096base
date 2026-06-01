@@ -19,47 +19,10 @@ module.exports = {
     },
   },
   networks: {
-    // Local in-memory network used for `npx hardhat test`.
-    //
-    // When FORK_BASE=1, the local network forks Base *mainnet* into an
-    // in-memory sandbox so we can SIMULATE deposits/withdrawals against the
-    // real, already-deployed Moonwell/Morpho vault. This is read/simulate only
-    // — nothing is broadcast or deployed to mainnet. Normal runs skip forking
-    // so the unit tests stay fast and offline.
-    //
-    // NOTE: the default https://mainnet.base.org node reverts the vault's
-    // gas-heavy view calls (totalAssets/convertToAssets iterate Morpho
-    // markets), so we default the fork to a fuller node. Override with
-    // BASE_MAINNET_RPC_URL if you have your own.
-    hardhat: process.env.FORK_BASE
-      ? {
-          // Forking Base needs ALL THREE of these together (each was necessary;
-          // dropping any one reproduced a distinct failure):
-          //  1. A custom hardfork history for chain 8453 — this Hardhat/EDR
-          //     build has no built-in Base schedule, so without it every forked
-          //     call throws "not configured with a hardfork activation history".
-          //     Base has run cancun-class rules across the range we fork, so map
-          //     the whole history to cancun from block 0.
-          //  2. A PINNED, not-too-recent block. The chain tip (~46M, 2026) is
-          //     beyond what executes cleanly → "No known hardfork for execution
-          //     on historical block". An earlier block (22M) runs fine, and
-          //     pinning also lets Hardhat cache fetched state on disk.
-          //  3. An ARCHIVE RPC. Pruning nodes fail mid-run with "state at block
-          //     N is pruned"; base.drpc.org serves archive state for free.
-          // Override via BASE_MAINNET_RPC_URL / BASE_MAINNET_FORK_BLOCK.
-          chains: {
-            8453: {
-              hardforkHistory: { cancun: 0 },
-            },
-          },
-          forking: {
-            url: process.env.BASE_MAINNET_RPC_URL || "https://base.drpc.org",
-            blockNumber: process.env.BASE_MAINNET_FORK_BLOCK
-              ? Number(process.env.BASE_MAINNET_FORK_BLOCK)
-              : 22000000,
-          },
-        }
-      : {},
+    // Local in-memory network used for `npx hardhat test`. The game is free and
+    // the contracts hold no funds, so there is nothing to fork or simulate
+    // against mainnet — the unit tests run fully offline.
+    hardhat: {},
     baseSepolia: {
       url: BASE_SEPOLIA_RPC_URL,
       chainId: 84532,

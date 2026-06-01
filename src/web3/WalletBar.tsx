@@ -1,11 +1,10 @@
-// Top web3 bar: connect button, network/fee status, and the mint-discount-NFT
-// action. Purely presentational over the usePlayFlow hook.
+// Top web3 bar: connect button, network status, and the free Premium NFT mint.
+// Purely presentational over the useWallet hook. No fees — the game is free.
 
 import { ConnectButton } from "@rainbow-me/rainbowkit";
-import type { PlayFlow } from "./usePlayFlow";
-import { contractsConfigured } from "./config";
+import type { WalletFlow } from "./useWallet";
 
-export const WalletBar = ({ flow }: { flow: PlayFlow }) => {
+export const WalletBar = ({ flow }: { flow: WalletFlow }) => {
   return (
     <div className="wallet-bar">
       <div className="wallet-row">
@@ -16,14 +15,6 @@ export const WalletBar = ({ flow }: { flow: PlayFlow }) => {
         />
       </div>
 
-      {!contractsConfigured && (
-        <p className="wallet-note warn">
-          Contracts not configured yet. Deploy to Base Sepolia and set
-          <code> VITE_GAME_PAYMENT_ADDRESS</code> /
-          <code> VITE_DISCOUNT_NFT_ADDRESS</code>.
-        </p>
-      )}
-
       {flow.isConnected && !flow.onCorrectNetwork && (
         <div className="wallet-note warn switch">
           <span>Wrong network — switch to Base Sepolia.</span>
@@ -33,35 +24,40 @@ export const WalletBar = ({ flow }: { flow: PlayFlow }) => {
         </div>
       )}
 
-      {flow.isConnected && flow.onCorrectNetwork && contractsConfigured && (
-        <div className="wallet-status">
-          <div className="wallet-stat">
-            <span className="wallet-stat-label">Fee</span>
-            <span className="wallet-stat-value">{flow.feeLabel}</span>
+      {flow.isConnected &&
+        flow.onCorrectNetwork &&
+        flow.premiumConfigured && (
+          <div className="wallet-status">
+            <div className="wallet-stat">
+              <span className="wallet-stat-label">Membership</span>
+              <span className="wallet-stat-value">
+                {flow.hasPremium ? "Premium member ✓" : "Free player"}
+              </span>
+            </div>
+            {!flow.hasPremium && (
+              <button
+                className="btn"
+                onClick={flow.mintPremium}
+                disabled={
+                  flow.premiumPhase === "pending" ||
+                  flow.premiumPhase === "confirming"
+                }
+              >
+                {flow.premiumPhase === "pending"
+                  ? "Confirm in wallet…"
+                  : flow.premiumPhase === "confirming"
+                    ? "Minting…"
+                    : "Mint Premium / Early supporter NFT"}
+              </button>
+            )}
           </div>
-          <div className="wallet-stat">
-            <span className="wallet-stat-label">Discount NFT</span>
-            <span className="wallet-stat-value">
-              {flow.hasNFT ? "Held ✓" : "—"}
-            </span>
-          </div>
-          {!flow.hasNFT && (
-            <button
-              className="btn"
-              onClick={flow.mint}
-              disabled={flow.mintPhase === "pending" || flow.mintPhase === "confirming"}
-            >
-              {flow.mintPhase === "pending"
-                ? "Confirm in wallet…"
-                : flow.mintPhase === "confirming"
-                  ? "Minting…"
-                  : "Mint discount NFT"}
-            </button>
-          )}
-        </div>
+        )}
+
+      {flow.hasPremium && (
+        <p className="wallet-note">⭐ Early supporter — thanks for being here.</p>
       )}
 
-      {flow.mintError && <p className="wallet-note err">{flow.mintError}</p>}
+      {flow.premiumError && <p className="wallet-note err">{flow.premiumError}</p>}
     </div>
   );
 };

@@ -1,13 +1,11 @@
 {
   "name": "base-4096-contracts",
   "version": "0.0.0",
-  "description": "Pay-to-play and discount NFT contracts for 4096base (Base Sepolia testnet).",
+  "description": "Two free collectible NFTs (PremiumNFT + AchievementBadge) for 4096base (Base Sepolia testnet). No payment, fee, fund, or custody contracts.",
   "private": true,
   "scripts": {
     "build": "hardhat compile",
     "test": "hardhat test",
-    "test:fork": "FORK_BASE=1 hardhat test test/MorphoVault.fork.test.js",
-    "test:vault": "node test/morpho-live-sim.mjs",
     "deploy:baseSepolia": "hardhat run scripts/deploy.js --network baseSepolia"
   },
   "devDependencies": {
@@ -18,7 +16,7 @@
     "@openzeppelin/contracts": "^5.1.0",
     "dotenv": "^16.4.7"
   },
-  "comment:hardhat-pin": "Hardhat is pinned to EXACTLY 2.26.1 — the last 2.x release that bundles the STABLE @nomicfoundation/edr 0.11.3. Hardhat 2.27.0+ switched to a prerelease EDR (0.12.0-next.x) whose forked generic-chain provider ignores the per-chain hardforkHistory override, which broke the Base-mainnet fork test ('not configured with a hardfork activation history'). Do not bump to ^2.27/^2.28 without re-verifying npm run test:fork. Hardhat 3 would fix forking natively but requires an incompatible toolbox/ESM/test-runner migration.",
+  "comment:hardhat-pin": "Hardhat is pinned to EXACTLY 2.26.1, a known-good toolchain that bundles the STABLE @nomicfoundation/edr 0.11.3. (The Base-mainnet fork test that originally forced this pin has been removed along with the fund feature; the pin is retained simply because it compiles and runs the NFT tests cleanly — bumping is optional and unrelated to current functionality.)",
   "comment:hardhat-ethers-pin": "@nomicfoundation/hardhat-toolbox@5 pulls hardhat-ethers@3.1.3, which bumped its peer requirement to hardhat ^2.28.0 and conflicts with the 2.26.1 pin. The override below holds it at 3.1.2 — the last release that accepts hardhat ^2.26.0.",
   "overrides": {
     "@nomicfoundation/hardhat-ethers": "3.1.2"

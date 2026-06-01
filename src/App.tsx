@@ -27,15 +27,11 @@ import {
 } from "./storage";
 import { Celebration, type CelebrationHandle } from "./Celebration";
 import { Leaderboard } from "./Leaderboard";
-import { usePlayFlow } from "./web3/usePlayFlow";
+import { useWallet } from "./web3/useWallet";
 import { WalletBar } from "./web3/WalletBar";
-import { FundPanel } from "./web3/FundPanel";
-import { contractsConfigured } from "./web3/config";
 import "./App.css";
 
 const SLIDE_MS = 110; // keep in sync with the tile transition in App.css
-
-type Tab = "game" | "fund";
 
 type GameStatus = "playing" | "won" | "over";
 
@@ -66,22 +62,9 @@ const App = () => {
   // True once this run has beaten the previous all-time best (personal best).
   const [newBest, setNewBest] = useState(false);
 
-  // Pay-to-play. When contracts aren't configured (no deployed addresses yet),
-  // the game falls back to free play so all existing behavior is preserved.
-  // When configured, a confirmed on-chain payment is required to start a game.
-  const flow = usePlayFlow();
-  const [armed, setArmed] = useState(!contractsConfigured);
-  const armedRef = useRef(armed);
-
-  // Game / Fund tabs. The game stays mounted (just hidden) when on the Fund
-  // tab so its in-progress state and listeners are preserved. tabRef keeps the
-  // global key handler from moving the board while the Fund tab is open.
-  const [tab, setTab] = useState<Tab>("game");
-  const tabRef = useRef<Tab>("game");
-  const switchTab = useCallback((t: Tab) => {
-    tabRef.current = t;
-    setTab(t);
-  }, []);
+  // Wallet/NFT interactions only (free game — no payment flow). The board is
+  // always playable; connecting a wallet is only for the collectible NFTs.
+  const flow = useWallet();
 
   // Refs are the source of truth for fast-path move handling so the global
   // key listener never reads stale closure state.
@@ -152,9 +135,7 @@ const App = () => {
   const handleMove = useCallback(
     (dir: Direction) => {
       if (lockRef.current) return;
-      if (tabRef.current !== "game") return; // ignore moves while on Fund tab
       if (statusRef.current === "over") return;
-      if (!armedRef.current) return; // must pay to play (when configured)
 
       const { moved, gained, slideTiles, resultTiles, maxMerged } = computeMove(
         tilesRef.current,
@@ -243,6 +224,7 @@ const App = () => {
     else handleMove(dy > 0 ? "down" : "up");
   };
 
+  // Start a fresh, playable game. The game is free — this is immediate.
   const newGame = useCallback(() => {
     const fresh = createInitialTiles();
     commitTiles(fresh);
@@ -260,24 +242,6 @@ const App = () => {
     setSavedEntryDate(undefined);
     setNewBest(false);
   }, [commitTiles]);
-
-  // Start a fresh, playable game (arms the board).
-  const startGame = useCallback(() => {
-    newGame();
-    armedRef.current = true;
-    setArmed(true);
-  }, [newGame]);
-
-  // Request a new game: free play starts immediately; paid mode awaits an
-  // on-chain payment confirmation and only then starts the game.
-  const { pay, payPhase } = flow;
-  const requestNewGame = useCallback(async () => {
-    if (!contractsConfigured) {
-      startGame();
-      return;
-    }
-    if (await pay()) startGame();
-  }, [startGame, pay]);
 
   const saveScore = useCallback(() => {
     const date = Date.now();
@@ -331,25 +295,7 @@ const App = () => {
         </div>
       </header>
 
-      <div className="tabs">
-        <button
-          className={"tab" + (tab === "game" ? " tab-active" : "")}
-          onClick={() => switchTab("game")}
-        >
-          🎮 Game
-        </button>
-        <button
-          className={"tab" + (tab === "fund" ? " tab-active" : "")}
-          onClick={() => switchTab("fund")}
-        >
-          💰 4096 Fund
-        </button>
-      </div>
-
-      <div
-        className="game-view"
-        style={{ display: tab === "game" ? undefined : "none" }}
-      >
+      <div className="game-view">
       <WalletBar flow={flow} />
 
       <section className="jackpot">
@@ -373,21 +319,8 @@ const App = () => {
       </section>
 
       <div className="controls-row">
-        <button
-          className="btn"
-          onClick={requestNewGame}
-          disabled={
-            contractsConfigured &&
-            (payPhase === "pending" || payPhase === "confirming")
-          }
-        >
-          {!contractsConfigured
-            ? "New Game"
-            : payPhase === "pending"
-              ? "Confirm in wallet…"
-              : payPhase === "confirming"
-                ? "Confirming…"
-                : `New Game (${flow.feeLabel})`}
+        <button className="btn" onClick={newGame}>
+          New Game
         </button>
         <button className="btn" onClick={() => setShowLeaderboard(true)}>
           🏆 Leaderboard
@@ -428,44 +361,6 @@ const App = () => {
           {toast && (
             <div className="toast" key={toast}>
               {toast}
-            </div>
-          )}
-
-          {status !== "over" && !armed && (
-            <div className="overlay">
-              <div className="overlay-card">
-                <h2 className="overlay-title">Pay to play</h2>
-                {!flow.isConnected ? (
-                  <p>Connect your wallet above to start a game.</p>
-                ) : !flow.onCorrectNetwork ? (
-                  <p>Switch to Base Sepolia (above) to start a game.</p>
-                ) : (
-                  <>
-                    <p>
-                      One game costs <strong>{flow.feeLabel}</strong>
-                      {flow.hasNFT ? " — NFT discount applied 🎟️" : ""}.
-                    </p>
-                    <button
-                      className="btn btn-primary full"
-                      onClick={requestNewGame}
-                      disabled={
-                        !flow.fee ||
-                        payPhase === "pending" ||
-                        payPhase === "confirming"
-                      }
-                    >
-                      {payPhase === "pending"
-                        ? "Confirm in wallet…"
-                        : payPhase === "confirming"
-                          ? "Confirming payment…"
-                          : `Pay ${flow.feeLabel} & play`}
-                    </button>
-                    {flow.payError && (
-                      <p className="wallet-note err">{flow.payError}</p>
-                    )}
-                  </>
-                )}
-              </div>
             </div>
           )}
 
@@ -520,8 +415,8 @@ const App = () => {
                   >
                     Keep going
                   </button>
-                  <button className="btn" onClick={requestNewGame}>
-                    {contractsConfigured ? "Pay & play again" : "New Game"}
+                  <button className="btn" onClick={newGame}>
+                    New Game
                   </button>
                 </div>
               </div>
@@ -569,25 +464,9 @@ const App = () => {
                   scoreSaved && <p className="saved-note">Saved to leaderboard ✓</p>
                 )}
 
-                {contractsConfigured && payPhase === "error" && flow.payError && (
-                  <p className="wallet-note err">{flow.payError}</p>
-                )}
                 <div className="overlay-actions">
-                  <button
-                    className="btn btn-primary"
-                    onClick={requestNewGame}
-                    disabled={
-                      contractsConfigured &&
-                      (payPhase === "pending" || payPhase === "confirming")
-                    }
-                  >
-                    {!contractsConfigured
-                      ? "New Game"
-                      : payPhase === "pending"
-                        ? "Confirm in wallet…"
-                        : payPhase === "confirming"
-                          ? "Confirming…"
-                          : "Pay & play again"}
+                  <button className="btn btn-primary" onClick={newGame}>
+                    New Game
                   </button>
                   <button
                     className="btn"
@@ -604,8 +483,6 @@ const App = () => {
 
       <p className="hint">Swipe or use arrow keys / WASD. Merge to 4096 to win.</p>
       </div>
-
-      {tab === "fund" && <FundPanel />}
 
       {showBig && (
         <div

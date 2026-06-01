@@ -1,18 +1,14 @@
-// Deploy DiscountNFT + GamePayment to Base Sepolia (testnet) ONLY.
+// Deploy the two collectible NFTs for 4096base to Base Sepolia (testnet) ONLY:
+//   - PremiumNFT      ("4096 Premium")  — free, one-per-wallet "early supporter"
+//   - AchievementBadge ("4096 Champion") — free, one-per-wallet "reached 4096"
 //
 //   npx hardhat run scripts/deploy.js --network baseSepolia
 //
-// Requires PRIVATE_KEY in contracts/.env (a Base Sepolia test wallet funded
-// from a faucet). This script intentionally has no mainnet path.
+// The game is FREE: there is no payment, fee, fund, or custody contract. Neither
+// NFT holds or moves funds. Requires PRIVATE_KEY in contracts/.env (a Base
+// Sepolia test wallet funded from a faucet). This script has no mainnet path.
 
 const hre = require("hardhat");
-
-// Where withdrawn play fees are sent. Owner can change this later on-chain.
-const RECEIVER = "0x678C2FBC740c22edbcA38F4F1eb516DaEbF2D222";
-
-// Fees in ETH (converted to wei below).
-const BASE_FEE = hre.ethers.parseEther("0.000003");
-const DISCOUNT_FEE = hre.ethers.parseEther("0.0000003");
 
 async function main() {
   const net = hre.network.name;
@@ -31,28 +27,14 @@ async function main() {
     "ETH"
   );
 
-  // 1) Discount NFT.
-  const DiscountNFT = await hre.ethers.getContractFactory("DiscountNFT");
-  const nft = await DiscountNFT.deploy();
-  await nft.waitForDeployment();
-  const nftAddress = await nft.getAddress();
-  console.log("DiscountNFT:", nftAddress);
+  // 1) Premium / early-supporter NFT.
+  const PremiumNFT = await hre.ethers.getContractFactory("PremiumNFT");
+  const premium = await PremiumNFT.deploy();
+  await premium.waitForDeployment();
+  const premiumAddress = await premium.getAddress();
+  console.log("PremiumNFT:      ", premiumAddress);
 
-  // 2) GamePayment (owner = deployer, receiver = constant above).
-  const GamePayment = await hre.ethers.getContractFactory("GamePayment");
-  const game = await GamePayment.deploy(
-    deployer.address,
-    RECEIVER,
-    nftAddress,
-    BASE_FEE,
-    DISCOUNT_FEE
-  );
-  await game.waitForDeployment();
-  const gameAddress = await game.getAddress();
-  console.log("GamePayment:", gameAddress);
-
-  // 3) Achievement badge ("4096 Champion") — free, one-per-wallet, offered by
-  //    the UI on reaching 4096. No constructor args.
+  // 2) "Reached 4096" winner badge — offered by the UI on reaching 4096.
   const AchievementBadge = await hre.ethers.getContractFactory("AchievementBadge");
   const badge = await AchievementBadge.deploy();
   await badge.waitForDeployment();
@@ -60,8 +42,7 @@ async function main() {
   console.log("AchievementBadge:", badgeAddress);
 
   console.log("\n--- Frontend env (.env / .env.local in project root) ---");
-  console.log(`VITE_GAME_PAYMENT_ADDRESS=${gameAddress}`);
-  console.log(`VITE_DISCOUNT_NFT_ADDRESS=${nftAddress}`);
+  console.log(`VITE_PREMIUM_NFT_ADDRESS=${premiumAddress}`);
   console.log(`VITE_ACHIEVEMENT_BADGE_ADDRESS=${badgeAddress}`);
   console.log("VITE_CHAIN_ID=84532");
 }
