@@ -4,12 +4,14 @@
     "chainId": 84532,
     "playerRegistry": "0xcA263bcF53c076838Ef8770078204aEdEe346821",
     "premiumNft": "0xA106Ad8c6DCA0eDeAF80fDaf042a61eAf7f3eC69",
-    "achievementBadge": "0x8c020Fb8a1B1e0D2C0b6611caD92b824234EeE90"
+    "achievementBadge": "0x8c020Fb8a1B1e0D2C0b6611caD92b824234EeE90",
+    "dailyCheckIn": null
   },
   "base": {
     "chainId": 8453,
     "playerRegistry": "0xcA263bcF53c076838Ef8770078204aEdEe346821",
     "premiumNft": "0xA106Ad8c6DCA0eDeAF80fDaf042a61eAf7f3eC69",
-    "achievementBadge": "0x8c020Fb8a1B1e0D2C0b6611caD92b824234EeE90"
+    "achievementBadge": "0x8c020Fb8a1B1e0D2C0b6611caD92b824234EeE90",
+    "dailyCheckIn": null
   }
 }

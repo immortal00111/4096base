@@ -31,6 +31,7 @@ import { Leaderboard } from "./Leaderboard";
 import { useWallet } from "./web3/useWallet";
 import { useRegistry } from "./web3/useRegistry";
 import { WalletBar } from "./web3/WalletBar";
+import { CheckInPanel } from "./web3/CheckInPanel";
 import { registryConfigured } from "./web3/config";
 import "./App.css";
 
@@ -348,6 +349,9 @@ const App = () => {
             : ""}
         </p>
       )}
+
+      {/* Daily check-in — shown to registered players when configured. */}
+      <CheckInPanel show={registryConfigured && reg.isRegistered} />
 
       <section className="jackpot">
         <div className="jackpot-line">

@@ -30,6 +30,9 @@ export const PREMIUM_NFT_ADDRESS = asAddress(
 export const ACHIEVEMENT_BADGE_ADDRESS = asAddress(
   import.meta.env.VITE_ACHIEVEMENT_BADGE_ADDRESS
 );
+export const DAILY_CHECKIN_ADDRESS = asAddress(
+  import.meta.env.VITE_DAILY_CHECKIN_ADDRESS
+);
 
 export const TARGET_CHAIN_ID = base.id; // 8453 (Base mainnet)
 
@@ -41,6 +44,9 @@ export const registryConfigured = PLAYER_REGISTRY_ADDRESS !== ZERO;
 // Each NFT is independent; its mint UI is shown only once its address is set.
 export const premiumConfigured = PREMIUM_NFT_ADDRESS !== ZERO;
 export const badgeConfigured = ACHIEVEMENT_BADGE_ADDRESS !== ZERO;
+
+// Daily check-in feature; the UI is hidden until its address is set.
+export const dailyCheckinConfigured = DAILY_CHECKIN_ADDRESS !== ZERO;
 
 // WalletConnect projectId. Get a free one at https://cloud.reown.com and put it
 // in .env as VITE_WC_PROJECT_ID. A placeholder lets injected wallets (MetaMask,

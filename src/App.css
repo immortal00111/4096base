@@ -679,6 +679,40 @@
   margin: 8px 0 12px;
 }
 
+.checkin-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 4px 0 10px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--base-blue);
+  border-radius: var(--radius);
+}
+
+.checkin-info {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.checkin-streak {
+  font-weight: 800;
+  color: #ffb454;
+}
+
+.checkin-best {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+.checkin-done {
+  font-weight: 700;
+  color: var(--base-blue-bright);
+}
+
 .lb-note {
   margin: -2px 0 12px;
   text-align: center;
